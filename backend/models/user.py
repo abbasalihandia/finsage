@@ -1,14 +1,5 @@
-try:
-    from sqlalchemy import Column, Integer, String, DateTime  # type: ignore[import]
-    from sqlalchemy.sql import func  # type: ignore[import]
-except ImportError:
-    from typing import Any
-    Column = Any
-    Integer = Any
-    String = Any
-    DateTime = Any
-    func = Any
-
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
 from database import Base
 
 class User(Base):
