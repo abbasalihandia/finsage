@@ -26,3 +26,5 @@ export const getSummary = () => API.get('/transactions/summary');
 // Budgets
 export const createBudget = (data) => API.post('/budgets/', data);
 export const getBudgets = (month) => API.get(`/budgets/?month=${month}`);
+// Chat
+export const askAI = (message) => API.post('/chat/ask', { message });

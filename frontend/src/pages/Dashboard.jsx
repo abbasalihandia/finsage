@@ -77,9 +77,15 @@ export default function Dashboard() {
       <nav style={styles.navbar}>
         <h1 style={styles.navLogo}>💰 FinSage</h1>
         <div style={styles.navRight}>
+          <button
+             style={styles.chatNavBtn}
+             onClick={() => navigate("/chat")}
+        >
+          🤖 AI Coach
+          </button>
           <span style={styles.navUser}>👋 {user?.name}</span>
           <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
-        </div>
+      </div>
       </nav>
 
       <div style={styles.container}>
@@ -271,5 +277,10 @@ const styles = {
   deleteBtn: {
     background: "#fde8e8", color: "#e94560", border: "none",
     padding: "0.3rem 0.7rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: "600",
+  },
+  chatNavBtn: {
+  background: "transparent", color: "white",
+  border: "1px solid rgba(255,255,255,0.3)",
+  padding: "0.4rem 1rem", borderRadius: "6px", fontWeight: "500",
   },
 };
