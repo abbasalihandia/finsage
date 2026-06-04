@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid
+} from "recharts";
 import { useAuth } from "../context/AuthContext";
-import { getSummary, getTransactions, addTransaction, deleteTransaction } from "../api/api";
+import { getSummary, getTransactions, addTransaction, deleteTransaction, getMonthlyTrends,  uploadBankStatement } from "../api/api";
 
 const COLORS = ["#0f3460", "#e94560", "#f5a623", "#2ecc71", "#9b59b6", "#1abc9c"];
-
 const CATEGORIES = ["food", "rent", "transport", "shopping", "entertainment", "health", "salary", "freelance", "other"];
 
 export default function Dashboard() {
@@ -14,10 +16,13 @@ export default function Dashboard() {
 
   const [summary, setSummary] = useState({ total_income: 0, total_expense: 0, balance: 0, category_spending: {} });
   const [transactions, setTransactions] = useState([]);
+  const [monthlyTrends, setMonthlyTrends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ title: "", amount: "", type: "expense", category: "food", note: "" });
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -25,9 +30,14 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
-      const [summaryRes, transRes] = await Promise.all([getSummary(), getTransactions()]);
+      const [summaryRes, transRes, trendsRes] = await Promise.all([
+        getSummary(),
+        getTransactions(),
+        getMonthlyTrends()
+      ]);
       setSummary(summaryRes.data);
       setTransactions(transRes.data);
+      setMonthlyTrends(trendsRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -68,7 +78,53 @@ export default function Dashboard() {
     name, value
   }));
 
-  if (loading) return <div style={styles.loading}>Loading your finances...</div>;
+  const exportToCSV = () => {
+  if (transactions.length === 0) {
+    alert("No transactions to export!");
+    return;
+  }
+
+  const headers = ["Title", "Category", "Type", "Amount", "Date", "Note"];
+  const rows = transactions.map(t => [
+    t.title,
+    t.category,
+    t.type,
+    t.amount,
+    new Date(t.date).toLocaleDateString(),
+    t.note || ""
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map(row => row.join(","))
+    .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "finsage_transactions.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+};
+ const handlePDFUpload = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  setUploading(true);
+  setUploadMessage("");
+
+  try {
+    const res = await uploadBankStatement(file);
+    setUploadMessage(`✅ ${res.data.message}`);
+    fetchData(); // Refresh dashboard
+  } catch (err) {
+    setUploadMessage("❌ " + (err.response?.data?.detail || "Upload failed"));
+  } finally {
+    setUploading(false);
+  }
+};
+
+if (loading) return <div style={styles.loading}>Loading your finances...</div>;
 
   return (
     <div style={styles.page}>
@@ -77,15 +133,12 @@ export default function Dashboard() {
       <nav style={styles.navbar}>
         <h1 style={styles.navLogo}>💰 FinSage</h1>
         <div style={styles.navRight}>
-          <button
-             style={styles.chatNavBtn}
-             onClick={() => navigate("/chat")}
-        >
-          🤖 AI Coach
+          <button style={styles.chatNavBtn} onClick={() => navigate("/chat")}>
+            🤖 AI Coach
           </button>
           <span style={styles.navUser}>👋 {user?.name}</span>
           <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
-      </div>
+        </div>
       </nav>
 
       <div style={styles.container}>
@@ -106,6 +159,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Pie Chart + Add Transaction */}
         <div style={styles.mainGrid}>
 
           {/* Add Transaction Form */}
@@ -178,9 +232,62 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Monthly Trends Bar Chart */}
+        <div style={{ ...styles.tableCard, marginBottom: "2rem" }}>
+          <h2 style={styles.sectionTitle}>Monthly Income vs Expenses</h2>
+          {monthlyTrends.length === 0 ? (
+            <p style={styles.emptyText}>No data yet. Add transactions to see trends!</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={monthlyTrends} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value) => `₹${value.toLocaleString()}`} />
+                <Legend />
+                <Bar dataKey="income" name="Income" fill="#2ecc71" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expense" name="Expense" fill="#e94560" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* PDF Upload Card */}
+<div style={styles.uploadCard}>
+  <div style={styles.uploadLeft}>
+    <h2 style={styles.sectionTitle}>📄 Import Bank Statement</h2>
+    <p style={styles.uploadDesc}>
+      Upload your bank statement PDF and AI will automatically extract and categorize all transactions.
+    </p>
+  </div>
+  <div style={styles.uploadRight}>
+    <label style={styles.uploadLabel}>
+      {uploading ? "Processing..." : "⬆ Upload PDF"}
+      <input
+        type="file"
+        accept=".pdf"
+        style={{ display: "none" }}
+        onChange={handlePDFUpload}
+        disabled={uploading}
+      />
+    </label>
+    {uploadMessage && (
+      <p style={{
+        marginTop: "0.5rem", fontSize: "0.85rem",
+        color: uploadMessage.startsWith("✅") ? "#2ecc71" : "#e94560"
+      }}>
+        {uploadMessage}
+      </p>
+    )}
+  </div>
+</div>
+
         {/* Transactions Table */}
         <div style={styles.tableCard}>
           <h2 style={styles.sectionTitle}>Recent Transactions</h2>
+          <button style={styles.exportBtn} onClick={exportToCSV}>
+            ⬇ Export CSV
+    </button>
           {transactions.length === 0 ? (
             <p style={styles.emptyText}>No transactions yet.</p>
           ) : (
@@ -239,6 +346,11 @@ const styles = {
   navLogo: { fontSize: "1.4rem", fontWeight: "700" },
   navRight: { display: "flex", alignItems: "center", gap: "1rem" },
   navUser: { fontSize: "0.95rem" },
+  chatNavBtn: {
+    background: "transparent", color: "white",
+    border: "1px solid rgba(255,255,255,0.3)",
+    padding: "0.4rem 1rem", borderRadius: "6px", fontWeight: "500",
+  },
   logoutBtn: {
     background: "#e94560", color: "white", border: "none",
     padding: "0.4rem 1rem", borderRadius: "6px", fontWeight: "600",
@@ -255,7 +367,7 @@ const styles = {
   formCard: { background: "white", borderRadius: "12px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.07)" },
   chartCard: { background: "white", borderRadius: "12px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.07)" },
   tableCard: { background: "white", borderRadius: "12px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.07)" },
-  sectionTitle: { fontSize: "1.1rem", fontWeight: "600", marginBottom: "1.2rem", color: "#1a1a2e" },
+  sectionTitle: { fontSize: "1.1rem", fontWeight: "600", color: "#1a1a2e" },
   input: {
     width: "100%", padding: "0.7rem 1rem", borderRadius: "8px",
     border: "1.5px solid #e0e0e0", fontSize: "0.95rem", marginBottom: "0.8rem",
@@ -265,6 +377,28 @@ const styles = {
     width: "100%", padding: "0.8rem", background: "#0f3460",
     color: "white", border: "none", borderRadius: "8px",
     fontSize: "1rem", fontWeight: "600",
+  },
+  tableTitleRow: {
+  display: "flex", justifyContent: "space-between",
+  alignItems: "center", marginBottom: "1.2rem",
+  },
+  uploadCard: {
+  background: "white", borderRadius: "12px", padding: "1.5rem",
+  boxShadow: "0 2px 12px rgba(0,0,0,0.07)", marginBottom: "2rem",
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+},
+uploadLeft: { flex: 1 },
+uploadDesc: { color: "#888", fontSize: "0.9rem", marginTop: "0.3rem" },
+uploadRight: { textAlign: "right" },
+uploadLabel: {
+  background: "#0f3460", color: "white", padding: "0.7rem 1.5rem",
+  borderRadius: "8px", fontWeight: "600", fontSize: "0.9rem",
+  cursor: "pointer", display: "inline-block",
+},
+ exportBtn: {
+  background: "#f0f2f5", color: "#1a1a2e", border: "none",
+  padding: "0.4rem 1rem", borderRadius: "6px",
+  fontWeight: "600", fontSize: "0.85rem",
   },
   error: { color: "#e94560", fontSize: "0.85rem", marginBottom: "0.8rem" },
   emptyText: { color: "#aaa", textAlign: "center", padding: "2rem 0" },
@@ -277,10 +411,5 @@ const styles = {
   deleteBtn: {
     background: "#fde8e8", color: "#e94560", border: "none",
     padding: "0.3rem 0.7rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: "600",
-  },
-  chatNavBtn: {
-  background: "transparent", color: "white",
-  border: "1px solid rgba(255,255,255,0.3)",
-  padding: "0.4rem 1rem", borderRadius: "6px", fontWeight: "500",
   },
 };

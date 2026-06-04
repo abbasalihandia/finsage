@@ -83,3 +83,24 @@ def get_summary(
         "balance": total_income - total_expense,
         "category_spending": category_spending
     }
+
+@router.get("/monthly-trends")
+def get_monthly_trends(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == current_user.id
+    ).all()
+
+    monthly = {}
+    for t in transactions:
+        month = t.date.strftime("%b %Y")  # e.g. "Jan 2024"
+        if month not in monthly:
+            monthly[month] = {"month": month, "income": 0, "expense": 0}
+        if t.type == "income":
+            monthly[month]["income"] += t.amount
+        else:
+            monthly[month]["expense"] += t.amount
+
+    return list(monthly.values())

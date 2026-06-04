@@ -28,3 +28,13 @@ export const createBudget = (data) => API.post('/budgets/', data);
 export const getBudgets = (month) => API.get(`/budgets/?month=${month}`);
 // Chat
 export const askAI = (message) => API.post('/chat/ask', { message });
+export const getMonthlyTrends = () => API.get('/transactions/monthly-trends');
+
+// Upload
+export const uploadBankStatement = (file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return API.post('/upload/bank-statement', formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+};
