@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
-import { getSummary, getTransactions, addTransaction, deleteTransaction, getMonthlyTrends,  uploadBankStatement } from "../api/api";
+import { getSummary, getTransactions, addTransaction, deleteTransaction, getMonthlyTrends, uploadBankStatement } from "../api/api";
 
 const COLORS = ["#0f3460", "#e94560", "#f5a623", "#2ecc71", "#9b59b6", "#1abc9c"];
 const CATEGORIES = ["food", "rent", "transport", "shopping", "entertainment", "health", "salary", "freelance", "other"];
@@ -39,7 +39,7 @@ export default function Dashboard() {
       setTransactions(transRes.data);
       setMonthlyTrends(trendsRes.data);
     } catch (err) {
-      console.error(err);
+      console.error("fetchData error:", err);
     } finally {
       setLoading(false);
     }
@@ -74,57 +74,45 @@ export default function Dashboard() {
     navigate("/login");
   };
 
-  const pieData = Object.entries(summary.category_spending).map(([name, value]) => ({
-    name, value
-  }));
-
   const exportToCSV = () => {
-  if (transactions.length === 0) {
-    alert("No transactions to export!");
-    return;
-  }
+    if (transactions.length === 0) {
+      alert("No transactions to export!");
+      return;
+    }
+    const headers = ["Title", "Category", "Type", "Amount", "Date", "Note"];
+    const rows = transactions.map(t => [
+      t.title, t.category, t.type, t.amount,
+      new Date(t.date).toLocaleDateString(), t.note || ""
+    ]);
+    const csvContent = [headers, ...rows].map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "finsage_transactions.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
-  const headers = ["Title", "Category", "Type", "Amount", "Date", "Note"];
-  const rows = transactions.map(t => [
-    t.title,
-    t.category,
-    t.type,
-    t.amount,
-    new Date(t.date).toLocaleDateString(),
-    t.note || ""
-  ]);
+  const handlePDFUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadMessage("");
+    try {
+      const res = await uploadBankStatement(file);
+      setUploadMessage(`✅ ${res.data.message}`);
+      fetchData();
+    } catch (err) {
+      setUploadMessage("❌ " + (err.response?.data?.detail || "Upload failed"));
+    } finally {
+      setUploading(false);
+    }
+  };
 
-  const csvContent = [headers, ...rows]
-    .map(row => row.join(","))
-    .join("\n");
+  const pieData = Object.entries(summary.category_spending).map(([name, value]) => ({ name, value }));
 
-  const blob = new Blob([csvContent], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "finsage_transactions.csv";
-  link.click();
-  URL.revokeObjectURL(url);
-};
- const handlePDFUpload = async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  setUploading(true);
-  setUploadMessage("");
-
-  try {
-    const res = await uploadBankStatement(file);
-    setUploadMessage(`✅ ${res.data.message}`);
-    fetchData(); // Refresh dashboard
-  } catch (err) {
-    setUploadMessage("❌ " + (err.response?.data?.detail || "Upload failed"));
-  } finally {
-    setUploading(false);
-  }
-};
-
-if (loading) return <div style={styles.loading}>Loading your finances...</div>;
+  if (loading) return <div style={styles.loading}>Loading your finances...</div>;
 
   return (
     <div style={styles.page}>
@@ -159,51 +147,78 @@ if (loading) return <div style={styles.loading}>Loading your finances...</div>;
           </div>
         </div>
 
+        {/* AI Coach Banner */}
+        <div style={styles.aiBanner}>
+          <div style={styles.aiBannerLeft}>
+            <div style={styles.aiBannerBadge}>✨ Powered by Gemini AI</div>
+            <h2 style={styles.aiBannerTitle}>Your Personal Finance Coach</h2>
+            <p style={styles.aiBannerDesc}>
+              Ask me anything — "Where am I overspending?", "Give me a savings plan",
+              "How can I reach my goals faster?" I know your actual financial data.
+            </p>
+            <div style={styles.aiBannerInputRow}>
+              <input
+                style={styles.aiBannerInput}
+                placeholder="Ask your AI coach something..."
+                value={form.aiQuestion || ""}
+                onChange={(e) => setForm({ ...form, aiQuestion: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && form.aiQuestion?.trim()) {
+                    const question = form.aiQuestion;
+                    setForm({ ...form, aiQuestion: "" });
+                    navigate("/chat", { state: { question } });
+                  }
+                }}
+              />
+              <button
+                style={styles.aiBannerBtn}
+                onClick={() => {
+                  const question = form.aiQuestion || "";
+                  setForm({ ...form, aiQuestion: "" });
+                  navigate("/chat", { state: { question } });
+                }}
+              >
+                Ask AI →
+              </button>
+            </div>
+          </div>
+          <div style={styles.aiBannerRight}>
+            <div style={styles.aiBannerEmoji}>🤖</div>
+            <div style={styles.aiBannerStats}>
+              <div style={styles.aiBannerStat}>
+                <span style={styles.aiBannerStatNum}>{transactions.length}</span>
+                <span style={styles.aiBannerStatLabel}>transactions analyzed</span>
+              </div>
+              <div style={styles.aiBannerStat}>
+                <span style={styles.aiBannerStatNum}>{Object.keys(summary.category_spending).length}</span>
+                <span style={styles.aiBannerStatLabel}>spending categories</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Pie Chart + Add Transaction */}
         <div style={styles.mainGrid}>
-
-          {/* Add Transaction Form */}
           <div style={styles.formCard}>
             <h2 style={styles.sectionTitle}>Add Transaction</h2>
             <form onSubmit={handleAddTransaction}>
-              <input
-                style={styles.input}
-                placeholder="Title (e.g. Salary, Groceries)"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                required
-              />
-              <input
-                style={styles.input}
-                type="number"
-                placeholder="Amount (₹)"
-                value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                required
-              />
-              <select
-                style={styles.input}
-                value={form.type}
-                onChange={(e) => setForm({ ...form, type: e.target.value })}
-              >
+              <input style={styles.input} placeholder="Title (e.g. Salary, Groceries)"
+                value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
+              <input style={styles.input} type="number" placeholder="Amount (₹)"
+                value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
+              <select style={styles.input} value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="expense">Expense</option>
                 <option value="income">Income</option>
               </select>
-              <select
-                style={styles.input}
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
-              >
+              <select style={styles.input} value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}>
                 {CATEGORIES.map(cat => (
                   <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
                 ))}
               </select>
-              <input
-                style={styles.input}
-                placeholder="Note (optional)"
-                value={form.note}
-                onChange={(e) => setForm({ ...form, note: e.target.value })}
-              />
+              <input style={styles.input} placeholder="Note (optional)"
+                value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
               {error && <p style={styles.error}>{error}</p>}
               <button style={styles.addBtn} type="submit" disabled={adding}>
                 {adding ? "Adding..." : "+ Add Transaction"}
@@ -211,7 +226,6 @@ if (loading) return <div style={styles.loading}>Loading your finances...</div>;
             </form>
           </div>
 
-          {/* Pie Chart */}
           <div style={styles.chartCard}>
             <h2 style={styles.sectionTitle}>Spending by Category</h2>
             {pieData.length === 0 ? (
@@ -232,7 +246,7 @@ if (loading) return <div style={styles.loading}>Loading your finances...</div>;
           </div>
         </div>
 
-        {/* Monthly Trends Bar Chart */}
+        {/* Monthly Trends */}
         <div style={{ ...styles.tableCard, marginBottom: "2rem" }}>
           <h2 style={styles.sectionTitle}>Monthly Income vs Expenses</h2>
           {monthlyTrends.length === 0 ? (
@@ -252,42 +266,35 @@ if (loading) return <div style={styles.loading}>Loading your finances...</div>;
           )}
         </div>
 
-        {/* PDF Upload Card */}
-<div style={styles.uploadCard}>
-  <div style={styles.uploadLeft}>
-    <h2 style={styles.sectionTitle}>📄 Import Bank Statement</h2>
-    <p style={styles.uploadDesc}>
-      Upload your bank statement PDF and AI will automatically extract and categorize all transactions.
-    </p>
-  </div>
-  <div style={styles.uploadRight}>
-    <label style={styles.uploadLabel}>
-      {uploading ? "Processing..." : "⬆ Upload PDF"}
-      <input
-        type="file"
-        accept=".pdf"
-        style={{ display: "none" }}
-        onChange={handlePDFUpload}
-        disabled={uploading}
-      />
-    </label>
-    {uploadMessage && (
-      <p style={{
-        marginTop: "0.5rem", fontSize: "0.85rem",
-        color: uploadMessage.startsWith("✅") ? "#2ecc71" : "#e94560"
-      }}>
-        {uploadMessage}
-      </p>
-    )}
-  </div>
-</div>
+        {/* PDF Upload */}
+        <div style={styles.uploadCard}>
+          <div style={styles.uploadLeft}>
+            <h2 style={styles.sectionTitle}>📄 Import Bank Statement</h2>
+            <p style={styles.uploadDesc}>
+              Upload your bank statement PDF and AI will automatically extract and categorize all transactions.
+            </p>
+          </div>
+          <div style={styles.uploadRight}>
+            <label style={styles.uploadLabel}>
+              {uploading ? "Processing..." : "⬆ Upload PDF"}
+              <input type="file" accept=".pdf" style={{ display: "none" }}
+                onChange={handlePDFUpload} disabled={uploading} />
+            </label>
+            {uploadMessage && (
+              <p style={{ marginTop: "0.5rem", fontSize: "0.85rem",
+                color: uploadMessage.startsWith("✅") ? "#2ecc71" : "#e94560" }}>
+                {uploadMessage}
+              </p>
+            )}
+          </div>
+        </div>
 
         {/* Transactions Table */}
         <div style={styles.tableCard}>
-          <h2 style={styles.sectionTitle}>Recent Transactions</h2>
-          <button style={styles.exportBtn} onClick={exportToCSV}>
-            ⬇ Export CSV
-    </button>
+          <div style={styles.tableTitleRow}>
+            <h2 style={styles.sectionTitle}>Recent Transactions</h2>
+            <button style={styles.exportBtn} onClick={exportToCSV}>⬇ Export CSV</button>
+          </div>
           {transactions.length === 0 ? (
             <p style={styles.emptyText}>No transactions yet.</p>
           ) : (
@@ -312,11 +319,10 @@ if (loading) return <div style={styles.loading}>Loading your finances...</div>;
                         ...styles.typeBadge,
                         background: t.type === "income" ? "#d4edda" : "#fde8e8",
                         color: t.type === "income" ? "#2ecc71" : "#e94560",
-                      }}>
-                        {t.type}
-                      </span>
+                      }}>{t.type}</span>
                     </td>
-                    <td style={{ ...styles.td, fontWeight: "600", color: t.type === "income" ? "#2ecc71" : "#e94560" }}>
+                    <td style={{ ...styles.td, fontWeight: "600",
+                      color: t.type === "income" ? "#2ecc71" : "#e94560" }}>
                       {t.type === "income" ? "+" : "-"}₹{t.amount.toLocaleString()}
                     </td>
                     <td style={styles.td}>{new Date(t.date).toLocaleDateString()}</td>
@@ -357,10 +363,7 @@ const styles = {
   },
   container: { maxWidth: "1200px", margin: "0 auto", padding: "2rem" },
   cardRow: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1.5rem", marginBottom: "2rem" },
-  card: {
-    background: "white", borderRadius: "12px", padding: "1.5rem",
-    boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
-  },
+  card: { background: "white", borderRadius: "12px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.07)" },
   cardLabel: { color: "#888", fontSize: "0.9rem", marginBottom: "0.5rem" },
   cardValue: { fontSize: "1.8rem", fontWeight: "700" },
   mainGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "2rem" },
@@ -370,35 +373,29 @@ const styles = {
   sectionTitle: { fontSize: "1.1rem", fontWeight: "600", color: "#1a1a2e" },
   input: {
     width: "100%", padding: "0.7rem 1rem", borderRadius: "8px",
-    border: "1.5px solid #e0e0e0", fontSize: "0.95rem", marginBottom: "0.8rem",
-    outline: "none",
+    border: "1.5px solid #e0e0e0", fontSize: "0.95rem", marginBottom: "0.8rem", outline: "none",
   },
   addBtn: {
     width: "100%", padding: "0.8rem", background: "#0f3460",
-    color: "white", border: "none", borderRadius: "8px",
-    fontSize: "1rem", fontWeight: "600",
+    color: "white", border: "none", borderRadius: "8px", fontSize: "1rem", fontWeight: "600",
   },
-  tableTitleRow: {
-  display: "flex", justifyContent: "space-between",
-  alignItems: "center", marginBottom: "1.2rem",
+  tableTitleRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.2rem" },
+  exportBtn: {
+    background: "#f0f2f5", color: "#1a1a2e", border: "none",
+    padding: "0.4rem 1rem", borderRadius: "6px", fontWeight: "600", fontSize: "0.85rem",
   },
   uploadCard: {
-  background: "white", borderRadius: "12px", padding: "1.5rem",
-  boxShadow: "0 2px 12px rgba(0,0,0,0.07)", marginBottom: "2rem",
-  display: "flex", justifyContent: "space-between", alignItems: "center",
-},
-uploadLeft: { flex: 1 },
-uploadDesc: { color: "#888", fontSize: "0.9rem", marginTop: "0.3rem" },
-uploadRight: { textAlign: "right" },
-uploadLabel: {
-  background: "#0f3460", color: "white", padding: "0.7rem 1.5rem",
-  borderRadius: "8px", fontWeight: "600", fontSize: "0.9rem",
-  cursor: "pointer", display: "inline-block",
-},
- exportBtn: {
-  background: "#f0f2f5", color: "#1a1a2e", border: "none",
-  padding: "0.4rem 1rem", borderRadius: "6px",
-  fontWeight: "600", fontSize: "0.85rem",
+    background: "white", borderRadius: "12px", padding: "1.5rem",
+    boxShadow: "0 2px 12px rgba(0,0,0,0.07)", marginBottom: "2rem",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+  },
+  uploadLeft: { flex: 1 },
+  uploadDesc: { color: "#888", fontSize: "0.9rem", marginTop: "0.3rem" },
+  uploadRight: { textAlign: "right" },
+  uploadLabel: {
+    background: "#0f3460", color: "white", padding: "0.7rem 1.5rem",
+    borderRadius: "8px", fontWeight: "600", fontSize: "0.9rem",
+    cursor: "pointer", display: "inline-block",
   },
   error: { color: "#e94560", fontSize: "0.85rem", marginBottom: "0.8rem" },
   emptyText: { color: "#aaa", textAlign: "center", padding: "2rem 0" },
@@ -412,4 +409,34 @@ uploadLabel: {
     background: "#fde8e8", color: "#e94560", border: "none",
     padding: "0.3rem 0.7rem", borderRadius: "6px", fontSize: "0.8rem", fontWeight: "600",
   },
+  aiBanner: {
+    background: "linear-gradient(135deg, #0f3460 0%, #16213e 100%)",
+    borderRadius: "16px", padding: "2rem", marginBottom: "2rem", color: "white",
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    boxShadow: "0 8px 32px rgba(15,52,96,0.3)",
+  },
+  aiBannerLeft: { flex: 1, marginRight: "2rem" },
+  aiBannerBadge: {
+    display: "inline-block", background: "rgba(255,255,255,0.15)",
+    padding: "0.3rem 0.8rem", borderRadius: "20px", fontSize: "0.8rem", fontWeight: "600", marginBottom: "0.8rem",
+  },
+  aiBannerTitle: { fontSize: "1.5rem", fontWeight: "700", marginBottom: "0.5rem", color: "white" },
+  aiBannerDesc: { fontSize: "0.9rem", color: "rgba(255,255,255,0.75)", lineHeight: "1.6", marginBottom: "1.2rem" },
+  aiBannerInputRow: { display: "flex", gap: "0.8rem" },
+  aiBannerInput: {
+    flex: 1, padding: "0.75rem 1rem", borderRadius: "8px",
+    border: "none", fontSize: "0.95rem", outline: "none",
+    background: "rgba(255,255,255,0.15)", color: "white",
+  },
+  aiBannerBtn: {
+    background: "#e94560", color: "white", border: "none",
+    padding: "0.75rem 1.5rem", borderRadius: "8px",
+    fontWeight: "700", fontSize: "0.95rem", cursor: "pointer", whiteSpace: "nowrap",
+  },
+  aiBannerRight: { textAlign: "center", minWidth: "180px" },
+  aiBannerEmoji: { fontSize: "4rem", marginBottom: "1rem" },
+  aiBannerStats: { display: "flex", gap: "1.5rem", justifyContent: "center" },
+  aiBannerStat: { textAlign: "center" },
+  aiBannerStatNum: { display: "block", fontSize: "1.8rem", fontWeight: "700", color: "white" },
+  aiBannerStatLabel: { display: "block", fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", marginTop: "0.2rem" },
 };

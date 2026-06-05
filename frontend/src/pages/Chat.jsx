@@ -1,11 +1,15 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { askAI } from "../api/api";
 import { useAuth } from "../context/AuthContext";
+import ReactMarkdown from "react-markdown";
 
 export default function Chat() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const questionSentRef = useRef(false);
+
   const [messages, setMessages] = useState([
     {
       role: "ai",
@@ -15,22 +19,41 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (location.state?.question && location.state.question.trim() && !questionSentRef.current) {
+      questionSentRef.current = true;
+      const question = location.state.question;
+      window.history.replaceState({}, document.title);
+
+      setTimeout(() => {
+        setMessages((prev) => [...prev, { role: "user", text: question }]);
+        setLoading(true);
+        askAI(question)
+          .then((res) => {
+            setMessages((prev) => [...prev, { role: "ai", text: res.data.reply }]);
+          })
+          .catch((err) => {
+            console.error("AI error:", err);
+            setMessages((prev) => [...prev, { role: "ai", text: "Sorry, I couldn't process that. Please try again." }]);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+      }, 300);
+    }
+  }, []);
+
   const handleSend = async () => {
     if (!input.trim()) return;
-
     const userMessage = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
     setLoading(true);
-
     try {
       const res = await askAI(userMessage);
       setMessages((prev) => [...prev, { role: "ai", text: res.data.reply }]);
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "ai", text: "Sorry, I couldn't process that. Please try again." },
-      ]);
+      setMessages((prev) => [...prev, { role: "ai", text: "Sorry, I couldn't process that. Please try again." }]);
     } finally {
       setLoading(false);
     }
@@ -50,17 +73,12 @@ export default function Chat() {
 
   return (
     <div style={styles.page}>
-      {/* Navbar */}
       <nav style={styles.navbar}>
         <h1 style={styles.navLogo}>💰 FinSage</h1>
         <div style={styles.navRight}>
-          <button style={styles.navBtn} onClick={() => navigate("/dashboard")}>
-            Dashboard
-          </button>
+          <button style={styles.navBtn} onClick={() => navigate("/dashboard")}>Dashboard</button>
           <span style={styles.navUser}>👋 {user?.name}</span>
-          <button style={styles.logoutBtn} onClick={handleLogout}>
-            Logout
-          </button>
+          <button style={styles.logoutBtn} onClick={handleLogout}>Logout</button>
         </div>
       </nav>
 
@@ -74,23 +92,16 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* Messages */}
           <div style={styles.messagesBox}>
             {messages.map((msg, index) => (
-              <div
-                key={index}
-                style={{
-                  ...styles.messageBubble,
-                  alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                  background: msg.role === "user" ? "#0f3460" : "#f0f2f5",
-                  color: msg.role === "user" ? "white" : "#1a1a2e",
-                  borderRadius:
-                    msg.role === "user"
-                      ? "18px 18px 4px 18px"
-                      : "18px 18px 18px 4px",
-                }}
-              >
-                {msg.text}
+              <div key={index} style={{
+                ...styles.messageBubble,
+                alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                background: msg.role === "user" ? "#0f3460" : "#f0f2f5",
+                color: msg.role === "user" ? "white" : "#1a1a2e",
+                borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+              }}>
+                <ReactMarkdown>{msg.text}</ReactMarkdown>
               </div>
             ))}
             {loading && (
@@ -100,7 +111,6 @@ export default function Chat() {
             )}
           </div>
 
-          {/* Input */}
           <div style={styles.inputRow}>
             <input
               style={styles.chatInput}
@@ -111,10 +121,7 @@ export default function Chat() {
               disabled={loading}
             />
             <button
-              style={{
-                ...styles.sendBtn,
-                opacity: loading || !input.trim() ? 0.6 : 1,
-              }}
+              style={{ ...styles.sendBtn, opacity: loading || !input.trim() ? 0.6 : 1 }}
               onClick={handleSend}
               disabled={loading || !input.trim()}
             >
@@ -123,7 +130,6 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* Suggested Questions */}
         <div style={styles.suggestionsCard}>
           <h3 style={styles.suggestTitle}>💡 Try asking</h3>
           {[
@@ -133,13 +139,7 @@ export default function Chat() {
             "Give me a budget plan",
             "What is my current balance?",
           ].map((q, i) => (
-            <button
-              key={i}
-              style={styles.suggestionBtn}
-              onClick={() => setInput(q)}
-            >
-              {q}
-            </button>
+            <button key={i} style={styles.suggestionBtn} onClick={() => setInput(q)}>{q}</button>
           ))}
         </div>
       </div>
@@ -187,7 +187,7 @@ const styles = {
   },
   messageBubble: {
     maxWidth: "75%", padding: "0.75rem 1rem",
-    fontSize: "0.92rem", lineHeight: "1.5", whiteSpace: "pre-wrap",
+    fontSize: "0.92rem", lineHeight: "1.5",
   },
   inputRow: {
     display: "flex", gap: "0.8rem", padding: "1rem 1.5rem",
